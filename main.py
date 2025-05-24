@@ -13,7 +13,6 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
-
 class ToolBoxBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
@@ -23,20 +22,19 @@ class ToolBoxBot(commands.Bot):
 
     # Load all command modules
     async def setup_hook(self):
-        try:
-            # Load commands from the commands directory
-            for filename in os.listdir("./commands"):
-                if filename.endswith(".py") and not filename.startswith("__"):
-                    module_name = f"commands.{filename[:-3]}"
+        loaded = []
+        for filename in os.listdir("./commands"):
+            if filename.endswith(".py") and not filename.startswith("__"):
+                module_name = f"commands.{filename[:-3]}"
+                try:
                     await self.load_extension(module_name)
-                    logging.info(f"Loaded command module: {module_name}")
+                    loaded.append(module_name)
+                    logging.info(f"Successfully loaded: {module_name}")
+                except Exception as e:
+                    logging.error(f"Failed to load {module_name}: {e}")
 
-            # Sync slash commands
-            await self.tree.sync()
-            logging.info("Slash commands synced successfully")
-
-        except Exception as e:
-            logging.error(f"Error during setup: {e}")
+        await self.tree.sync()
+        logging.info("Commands synced with Discord")
 
     async def on_ready(self):
         logging.info(f"{self.user} has connected to Discord!")

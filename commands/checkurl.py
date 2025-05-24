@@ -238,13 +238,15 @@ class CheckURLCommand(commands.Cog):
 
         # Add warning footer based on risk level
         if risk_level == "🔴 High Risk":
-            footer_text = "⚠️ HIGH RISK: Avoid visiting this URL!"
+            primary_text = "⚠️ HIGH RISK: Avoid visiting this URL!"
         elif risk_level == "🟡 Medium Risk":
-            footer_text = "⚠️ MEDIUM RISK: Exercise extreme caution!"
+            primary_text = "⚠️ MEDIUM RISK: Exercise extreme caution!"
         else:
-            footer_text = (
+            primary_text = (
                 "ℹ️ Always verify URLs before clicking, even if they appear safe."
             )
+
+        footer_text = f"{primary_text}\n🔒 Results saved in SINEWAVE's threat database"
 
         embed.set_footer(text=footer_text)
         return embed
@@ -273,16 +275,13 @@ class CheckURLCommand(commands.Cog):
                         title="❌ Invalid URL",
                         description="Please provide a valid URL format.",
                         color=0xFF0000,
-                    ),
-                    ephemeral=True,
+                    )
                 )
                 return
 
             # Send initial progress embed
             progress_embed = self.create_progress_embed(url)
-            await interaction.response.send_message(
-                embed=progress_embed, ephemeral=False
-            )
+            await interaction.response.send_message(embed=progress_embed)
 
             try:
                 # Perform the checks with timeout
@@ -355,12 +354,12 @@ class CheckURLCommand(commands.Cog):
                 await interaction.edit_original_response(embed=error_embed)
             except:
                 try:
-                    await interaction.followup.send(embed=error_embed, ephemeral=True)
+                    await interaction.followup.send(embed=error_embed)
                 except:
                     # Last resort - send a simple message
                     logging.error("Failed to send error embed, sending simple message")
                     await interaction.followup.send(
-                        "An error occurred during URL checking.", ephemeral=True
+                        "An error occurred during URL checking."
                     )
 
 

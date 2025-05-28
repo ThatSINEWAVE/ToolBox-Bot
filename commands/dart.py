@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 from datetime import datetime
 import json
 from typing import Optional
+import re
 
 
 class DARTCommands(commands.Cog):
@@ -79,6 +80,28 @@ class DARTCommands(commands.Cog):
         parsed = urlparse(url)
         return parsed.netloc
 
+    def extract_invite_code(self, url):
+        """Extract invite code from Discord invite URL"""
+        if not self.is_discord_url(url):
+            return None
+
+        # Handle both discord.com/invite/CODE and discord.gg/CODE formats
+        if "discord.com/invite/" in url:
+            return url.split("discord.com/invite/")[-1].split("?")[0].split("#")[0]
+        elif "discord.gg/" in url:
+            return url.split("discord.gg/")[-1].split("?")[0].split("#")[0]
+
+        return None
+
+    def format_timestamp(self, timestamp):
+        """Convert Unix timestamp to readable date format"""
+        try:
+            if isinstance(timestamp, (int, float)):
+                return datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S UTC')
+            return str(timestamp)
+        except:
+            return str(timestamp)
+
     def format_embed_field(self, data: dict, exclude_keys: list = None) -> str:
         if exclude_keys is None:
             exclude_keys = []
@@ -87,7 +110,14 @@ class DARTCommands(commands.Cog):
         for key, value in data.items():
             if key in exclude_keys:
                 continue
-            if isinstance(value, dict):
+
+            # Special handling for timestamp fields
+            if key in ["FOUND_ON", "SERVER_STATUS_CHANGE", "INVITE_STATUS_CHANGE"] and isinstance(value, (int, float)):
+                if value != "UNKNOWN" and str(value) != "UNKNOWN":
+                    formatted.append(f"**{key}:** {self.format_timestamp(value)}")
+                else:
+                    formatted.append(f"**{key}:** {str(value)}")
+            elif isinstance(value, dict):
                 formatted.append(f"**{key}:**")
                 formatted.append(self.format_embed_field(value, exclude_keys))
             elif isinstance(value, list):
@@ -149,9 +179,9 @@ class DARTCommands(commands.Cog):
         # Extract additional entries
         if "## Additional Entries" in stats_text:
             start = (
-                stats_text.find("## Additional Entries")
-                + len("## Additional Entries")
-                + 1
+                    stats_text.find("## Additional Entries")
+                    + len("## Additional Entries")
+                    + 1
             )
             content = stats_text[start:].strip()
             for line in content.split("\n"):
@@ -178,14 +208,41 @@ class DARTCommands(commands.Cog):
                 # Check if domain matches any key or value in the dict
                 for key, value in entry.items():
                     if (
-                        isinstance(key, str)
-                        and (domain == key or domain.endswith("." + key))
+                            isinstance(key, str)
+                            and (domain == key or domain.endswith("." + key))
                     ) or (
-                        isinstance(value, str)
-                        and (domain == value or domain.endswith("." + value))
+                            isinstance(value, str)
+                            and (domain == value or domain.endswith("." + value))
                     ):
                         return entry
         return None
+
+    def search_discord_servers_by_invite(self, invite_code):
+        """Search Discord servers by invite code"""
+        matches = []
+        if not self.cache["discord_servers"]:
+            return matches
+
+        for server_id, server_data in self.cache["discord_servers"].items():
+            invite_url = server_data.get("INVITE_URL", "")
+            if invite_url:
+                server_invite_code = self.extract_invite_code(invite_url)
+                if server_invite_code and invite_code.lower() == server_invite_code.lower():
+                    matches.append(server_data)
+
+        return matches
+
+    def search_discord_servers_by_id(self, server_id):
+        """Search Discord servers by server ID"""
+        matches = []
+        if not self.cache["discord_servers"]:
+            return matches
+
+        for entry_id, server_data in self.cache["discord_servers"].items():
+            if server_data.get("SERVER_ID") == server_id:
+                matches.append(server_data)
+
+        return matches
 
     @app_commands.command(
         name="darturl",
@@ -199,8 +256,8 @@ class DARTCommands(commands.Cog):
 
         # Refresh cache if empty or stale (older than 1 hour)
         if (
-            not self.cache["last_updated"]
-            or (datetime.utcnow() - self.cache["last_updated"]).total_seconds() > 3600
+                not self.cache["last_updated"]
+                or (datetime.utcnow() - self.cache["last_updated"]).total_seconds() > 3600
         ):
             await self.refresh_cache()
 
@@ -239,10 +296,10 @@ class DARTCommands(commands.Cog):
         if self.cache["compromised_accounts"]:
             for account_id, account_data in self.cache["compromised_accounts"].items():
                 if (
-                    account_data.get("SURFACE_URL")
-                    and url in account_data["SURFACE_URL"]
+                        account_data.get("SURFACE_URL")
+                        and url in account_data["SURFACE_URL"]
                 ) or (
-                    account_data.get("FINAL_URL") and url in account_data["FINAL_URL"]
+                        account_data.get("FINAL_URL") and url in account_data["FINAL_URL"]
                 ):
                     compromised_matches.append(account_data)
 
@@ -255,7 +312,7 @@ class DARTCommands(commands.Cog):
 
             # Add full details of each match
             for i, match in enumerate(
-                compromised_matches[:3], 1
+                    compromised_matches[:3], 1
             ):  # Limit to first 3 matches
                 embed.add_field(
                     name=f"Match #{i}",
@@ -272,42 +329,55 @@ class DARTCommands(commands.Cog):
 
         # Check if it's a Discord URL
         if self.is_discord_url(url):
+            # Check for Discord invite matches
+            invite_code = self.extract_invite_code(url)
+            if invite_code:
+                discord_server_matches = self.search_discord_servers_by_invite(invite_code)
+
+                if discord_server_matches:
+                    embed.add_field(
+                        name="⚠️ Malicious Discord Invite Matches",
+                        value=f"Found {len(discord_server_matches)} matches for invite code `{invite_code}`",
+                        inline=False,
+                    )
+
+                    # Add full details of each match
+                    for i, match in enumerate(
+                            discord_server_matches[:3], 1
+                    ):  # Limit to first 3 matches
+                        embed.add_field(
+                            name=f"Server Match #{i}",
+                            value=self.format_embed_field(match),
+                            inline=False,
+                        )
+
+                    if len(discord_server_matches) > 3:
+                        embed.add_field(
+                            name="Additional Server Matches",
+                            value=f"There are {len(discord_server_matches) - 3} more matches not shown",
+                            inline=False,
+                        )
+                else:
+                    embed.add_field(
+                        name="Discord Invite Check",
+                        value=f"✅ Invite code `{invite_code}` not found in malicious server database",
+                        inline=False,
+                    )
+
+            # Also check for exact URL matches in the existing server database
             discord_server_matches = []
             if self.cache["discord_servers"]:
                 for server_id, server_data in self.cache["discord_servers"].items():
                     if (
-                        server_data.get("INVITE_URL")
-                        and url in server_data["INVITE_URL"]
+                            server_data.get("INVITE_URL")
+                            and url in server_data["INVITE_URL"]
                     ):
                         discord_server_matches.append(server_data)
 
-            if discord_server_matches:
+            if discord_server_matches and not invite_code:  # Only show if not already covered by invite check
                 embed.add_field(
-                    name="⚠️ Malicious Server Matches",
+                    name="⚠️ Malicious Server URL Matches",
                     value=f"Found in {len(discord_server_matches)} server records",
-                    inline=False,
-                )
-
-                # Add full details of each match
-                for i, match in enumerate(
-                    discord_server_matches[:3], 1
-                ):  # Limit to first 3 matches
-                    embed.add_field(
-                        name=f"Server Match #{i}",
-                        value=self.format_embed_field(match),
-                        inline=False,
-                    )
-
-                if len(discord_server_matches) > 3:
-                    embed.add_field(
-                        name="Additional Server Matches",
-                        value=f"There are {len(discord_server_matches) - 3} more matches not shown",
-                        inline=False,
-                    )
-            else:
-                embed.add_field(
-                    name="Discord Server Check",
-                    value="✅ Not found in malicious server database",
                     inline=False,
                 )
         else:
@@ -350,6 +420,174 @@ class DARTCommands(commands.Cog):
         await interaction.followup.send(embed=embed)
 
     @app_commands.command(
+        name="dartinvite",
+        description="Check a Discord invite against DART Project's malicious server database",
+    )
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.describe(invite="Discord invite URL or invite code to check")
+    async def dartinvite(self, interaction: discord.Interaction, invite: str):
+        await interaction.response.defer()
+
+        # Refresh cache if empty or stale (older than 1 hour)
+        if (
+                not self.cache["last_updated"]
+                or (datetime.utcnow() - self.cache["last_updated"]).total_seconds() > 3600
+        ):
+            await self.refresh_cache()
+
+        # Extract invite code from URL or use as-is if it's just a code
+        invite_code = invite
+        if invite.startswith(("http://", "https://")):
+            if not self.is_discord_url(invite):
+                await interaction.followup.send("Please provide a valid Discord invite URL (discord.com or discord.gg)")
+                return
+
+            extracted_code = self.extract_invite_code(invite)
+            if not extracted_code:
+                await interaction.followup.send("Could not extract invite code from URL")
+                return
+            invite_code = extracted_code
+
+        # Initialize embed
+        embed = discord.Embed(
+            title="🔍 Discord Invite Security Check",
+            description=f"**Checking Invite Code:** `{invite_code}`\n**Powered by:** [DART Project]({self.dart_project_url})",
+            color=0x7289DA,
+        )
+
+        # Check if cache is loaded
+        if not self.cache["discord_servers"]:
+            embed.add_field(
+                name="⚠️ Database Status",
+                value="DART Project Discord servers database not loaded. Please try again later.",
+                inline=False,
+            )
+            await interaction.followup.send(embed=embed)
+            return
+
+        # Search for matches
+        matches = self.search_discord_servers_by_invite(invite_code)
+
+        if matches:
+            embed.add_field(
+                name="⚠️ Malicious Server Matches",
+                value=f"Found {len(matches)} matches for invite code `{invite_code}`",
+                inline=False,
+            )
+
+            # Add full details of each match
+            for i, match in enumerate(matches[:3], 1):  # Limit to first 3 matches
+                embed.add_field(
+                    name=f"Server Match #{i}",
+                    value=self.format_embed_field(match),
+                    inline=False,
+                )
+
+            if len(matches) > 3:
+                embed.add_field(
+                    name="Additional Matches",
+                    value=f"There are {len(matches) - 3} more matches not shown",
+                    inline=False,
+                )
+        else:
+            embed.add_field(
+                name="✅ No Threats Found",
+                value=f"Invite code `{invite_code}` not found in malicious server database",
+                inline=False,
+            )
+
+        # Set footer with cache info
+        if self.cache["last_updated"]:
+            embed.set_footer(
+                text=f"DART Project Database • Last updated: {self.cache['last_updated'].strftime('%Y-%m-%d %H:%M UTC')}"
+            )
+        else:
+            embed.set_footer(text="DART Project Database • Cache not loaded")
+
+        await interaction.followup.send(embed=embed)
+
+    @app_commands.command(
+        name="dartserver",
+        description="Check a Discord server ID against DART Project's malicious server database",
+    )
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.describe(server_id="Discord server ID to check")
+    async def dartserver(self, interaction: discord.Interaction, server_id: str):
+        await interaction.response.defer()
+
+        # Validate server ID (should be numeric)
+        if not server_id.isdigit():
+            await interaction.followup.send("Invalid Discord server ID - must be numeric")
+            return
+
+        # Refresh cache if empty or stale (older than 1 hour)
+        if (
+                not self.cache["last_updated"]
+                or (datetime.utcnow() - self.cache["last_updated"]).total_seconds() > 3600
+        ):
+            await self.refresh_cache()
+
+        # Initialize embed
+        embed = discord.Embed(
+            title="🔍 Discord Server Security Check",
+            description=f"**Checking Server ID:** `{server_id}`\n**Powered by:** [DART Project]({self.dart_project_url})",
+            color=0x7289DA,
+        )
+
+        # Check if cache is loaded
+        if not self.cache["discord_servers"]:
+            embed.add_field(
+                name="⚠️ Database Status",
+                value="DART Project Discord servers database not loaded. Please try again later.",
+                inline=False,
+            )
+            await interaction.followup.send(embed=embed)
+            return
+
+        # Search for matches
+        matches = self.search_discord_servers_by_id(server_id)
+
+        if matches:
+            embed.add_field(
+                name="⚠️ Malicious Server Matches",
+                value=f"Found {len(matches)} matches for server ID `{server_id}`",
+                inline=False,
+            )
+
+            # Add full details of each match
+            for i, match in enumerate(matches[:3], 1):  # Limit to first 3 matches
+                embed.add_field(
+                    name=f"Server Match #{i}",
+                    value=self.format_embed_field(match),
+                    inline=False,
+                )
+
+            if len(matches) > 3:
+                embed.add_field(
+                    name="Additional Matches",
+                    value=f"There are {len(matches) - 3} more matches not shown",
+                    inline=False,
+                )
+        else:
+            embed.add_field(
+                name="✅ No Threats Found",
+                value=f"Server ID `{server_id}` not found in malicious server database",
+                inline=False,
+            )
+
+        # Set footer with cache info
+        if self.cache["last_updated"]:
+            embed.set_footer(
+                text=f"DART Project Database • Last updated: {self.cache['last_updated'].strftime('%Y-%m-%d %H:%M UTC')}"
+            )
+        else:
+            embed.set_footer(text="DART Project Database • Cache not loaded")
+
+        await interaction.followup.send(embed=embed)
+
+    @app_commands.command(
         name="dartuser",
         description="Check a Discord user ID against DART Project's databases",
     )
@@ -366,8 +604,8 @@ class DARTCommands(commands.Cog):
 
         # Refresh cache if empty or stale (older than 1 hour)
         if (
-            not self.cache["last_updated"]
-            or (datetime.utcnow() - self.cache["last_updated"]).total_seconds() > 3600
+                not self.cache["last_updated"]
+                or (datetime.utcnow() - self.cache["last_updated"]).total_seconds() > 3600
         ):
             await self.refresh_cache()
 
@@ -404,7 +642,7 @@ class DARTCommands(commands.Cog):
 
             # Add full details of each match
             for i, match in enumerate(
-                account_matches[:3], 1
+                    account_matches[:3], 1
             ):  # Limit to first 3 matches
                 embed.add_field(
                     name=f"Account Match #{i}",
@@ -461,8 +699,8 @@ class DARTCommands(commands.Cog):
 
         # Refresh cache if empty or stale (older than 1 hour)
         if (
-            not self.cache["last_updated"]
-            or (datetime.utcnow() - self.cache["last_updated"]).total_seconds() > 3600
+                not self.cache["last_updated"]
+                or (datetime.utcnow() - self.cache["last_updated"]).total_seconds() > 3600
         ):
             await self.refresh_cache()
 
@@ -486,7 +724,7 @@ class DARTCommands(commands.Cog):
             embed.add_field(
                 name="📈 Database Statistics",
                 value=f"**Total Cases:** {stats.get('Total Cases', 'N/A')}\n"
-                f"**Protected Members:** {stats.get('Protected Members', 'N/A')}",
+                      f"**Protected Members:** {stats.get('Protected Members', 'N/A')}",
                 inline=False,
             )
 
@@ -494,8 +732,8 @@ class DARTCommands(commands.Cog):
             embed.add_field(
                 name="🗄️ Database Entries",
                 value=f"**Discord IDs:** {stats.get('Discord IDs', 'N/A')}\n"
-                f"**Discord Servers:** {stats.get('Discord Servers', 'N/A')}\n"
-                f"**Global Domains:** {stats.get('Global Domains', 'N/A')}",
+                      f"**Discord Servers:** {stats.get('Discord Servers', 'N/A')}\n"
+                      f"**Global Domains:** {stats.get('Global Domains', 'N/A')}",
                 inline=False,
             )
 
@@ -503,9 +741,9 @@ class DARTCommands(commands.Cog):
             embed.add_field(
                 name="📋 Categories",
                 value=f"**Account Types:** {stats.get('Account Types', 'N/A')}\n"
-                f"**Behaviors:** {stats.get('Behaviors', 'N/A')}\n"
-                f"**Attack Methods:** {stats.get('Attack Methods', 'N/A')}\n"
-                f"**Countries:** {stats.get('Countries', 'N/A')}",
+                      f"**Behaviors:** {stats.get('Behaviors', 'N/A')}\n"
+                      f"**Attack Methods:** {stats.get('Attack Methods', 'N/A')}\n"
+                      f"**Countries:** {stats.get('Countries', 'N/A')}",
                 inline=False,
             )
 

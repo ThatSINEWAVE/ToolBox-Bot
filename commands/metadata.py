@@ -13,6 +13,9 @@ import zipfile
 import xml.etree.ElementTree as ET
 from datetime import datetime
 import mimetypes
+import hashlib
+import os
+import platform
 
 # Try to import optional dependencies
 try:

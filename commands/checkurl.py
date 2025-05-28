@@ -256,6 +256,8 @@ class CheckURLCommand(commands.Cog):
         name="checkurl",
         description="Check a URL for security threats using multiple services",
     )
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.describe(url="The URL to check for security threats")
     async def checkurl(self, interaction: discord.Interaction, url: str):
         try:

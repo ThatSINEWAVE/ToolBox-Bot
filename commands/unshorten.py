@@ -36,6 +36,8 @@ class UnshortenCommand(commands.Cog):
     @app_commands.command(
         name="unshorten", description="Follow URL redirects to reveal final destination"
     )
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.describe(url="The shortened URL to unshorten")
     async def unshorten(self, interaction: discord.Interaction, url: str):
         try:

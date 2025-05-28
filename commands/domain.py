@@ -50,6 +50,8 @@ class DomainCommand(commands.Cog):
     @app_commands.command(
         name="domain", description="Perform full domain reconnaissance"
     )
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.describe(domain="The domain to investigate")
     async def domain(self, interaction: discord.Interaction, domain: str):
         try:

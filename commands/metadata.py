@@ -269,6 +269,8 @@ class MetadataCommand(commands.Cog):
             return metadata  # Return basic metadata even if advanced extraction fails
 
     @app_commands.command(name="metadata", description="Extract metadata from a file")
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.describe(url="URL to a file (e.g., Discord attachment link)")
     async def metadata(self, interaction: discord.Interaction, url: str):
         try:

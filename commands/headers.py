@@ -41,6 +41,8 @@ class HeadersCommand(commands.Cog):
     @app_commands.command(
         name="headers", description="Analyze HTTP security headers of a website"
     )
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.describe(url="The URL to check headers for")
     async def headers(self, interaction: discord.Interaction, url: str):
         try:

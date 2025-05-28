@@ -29,6 +29,8 @@ class CVECommand(commands.Cog):
     @app_commands.command(
         name="cve", description="Get details about a CVE vulnerability"
     )
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.describe(cve_id="The CVE ID to lookup (e.g., CVE-2021-44228)")
     async def cve(self, interaction: discord.Interaction, cve_id: str):
         try:

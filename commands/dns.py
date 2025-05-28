@@ -28,6 +28,8 @@ class DNSCommand(commands.Cog):
     @app_commands.command(
         name="dns", description="Perform full DNS enumeration for a domain"
     )
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.describe(domain="The domain to check DNS records for")
     async def dns(self, interaction: discord.Interaction, domain: str):
         try:

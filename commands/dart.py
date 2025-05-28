@@ -191,6 +191,8 @@ class DARTCommands(commands.Cog):
         name="darturl",
         description="Check a URL against DART Project's databases for malicious activity",
     )
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.describe(url="The URL to check against DART Project's databases")
     async def darturl(self, interaction: discord.Interaction, url: str):
         await interaction.response.defer()
@@ -351,6 +353,8 @@ class DARTCommands(commands.Cog):
         name="dartuser",
         description="Check a Discord user ID against DART Project's databases",
     )
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.describe(user_id="The Discord user ID to check")
     async def dartuser(self, interaction: discord.Interaction, user_id: str):
         await interaction.response.defer()
@@ -450,6 +454,8 @@ class DARTCommands(commands.Cog):
         name="dartstats",
         description="Get statistics about the DART Project databases",
     )
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     async def dartstats(self, interaction: discord.Interaction):
         await interaction.response.defer()
 

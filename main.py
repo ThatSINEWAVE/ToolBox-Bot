@@ -17,6 +17,7 @@ class ToolBoxBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
         intents.message_content = True
+        intents.dm_messages = True
 
         super().__init__(command_prefix="!", intents=intents, help_command=None)
 

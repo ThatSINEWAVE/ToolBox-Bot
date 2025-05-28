@@ -12,6 +12,8 @@ class EchoCommand(commands.Cog):
         name="echo",
         description="Create a custom embed message"
     )
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.describe(
         title="The title of the embed",
         paragraph1="First paragraph content (optional)",

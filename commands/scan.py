@@ -16,6 +16,8 @@ class ScanCommand(commands.Cog):
     @app_commands.command(
         name="scan", description="Perform a quick port scan on an IP address"
     )
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.describe(ip="The IP address to scan")
     async def scan(self, interaction: discord.Interaction, ip: str):
         try:

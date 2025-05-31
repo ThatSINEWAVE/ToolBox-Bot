@@ -5,7 +5,7 @@ import aiohttp
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import json
 
 
@@ -35,20 +35,26 @@ class PCWStatsCommands(commands.Cog):
             logging.error(f"Error fetching data from {url}: {e}")
             return None
 
-    async def refresh_cache(self) -> None:
+    async def refresh_cache(self) -> bool:
+        """Fetch fresh data from both APIs and update cache"""
         try:
-            stats = await self.fetch_data(self.stats_url)
-            pixel_config = await self.fetch_data(self.pixel_config_url)
+            # Fetch both data sources concurrently
+            stats, pixel_config = await asyncio.gather(
+                self.fetch_data(self.stats_url), self.fetch_data(self.pixel_config_url)
+            )
 
-            if stats:
-                self.cache["stats"] = stats
-            if pixel_config:
-                self.cache["pixel_config"] = pixel_config
+            if stats is None or pixel_config is None:
+                logging.error("Failed to fetch one or more data sources")
+                return False
 
+            self.cache["stats"] = stats
+            self.cache["pixel_config"] = pixel_config
             self.cache["last_updated"] = datetime.utcnow()
-            logging.info("PCWStats cache refreshed")
+            logging.info("PCWStats cache refreshed successfully")
+            return True
         except Exception as e:
             logging.error(f"Error refreshing PCWStats cache: {e}")
+            return False
 
     def get_page_name(self, pixel_filename: str) -> str:
         """Get the human-readable page name from the pixel filename"""
@@ -61,16 +67,10 @@ class PCWStatsCommands(commands.Cog):
 
         return pixel_filename
 
-    def calculate_stats(
-        self, stats_data: Optional[Dict[str, Any]]
-    ) -> Optional[Dict[str, Any]]:
-        """Calculate total views, 30-day views, and top pages"""
-        if not stats_data:
-            return None
-
+    def calculate_stats(self, stats_data: Dict[str, Any]) -> Dict[str, Any]:
         total_views = 0
         thirty_day_views = 0
-        top_pages = []
+        top_pages: List[Dict[str, Any]] = []
         thirty_days_ago = datetime.utcnow() - timedelta(days=30)
 
         for pixel_filename, data in stats_data.items():
@@ -112,40 +112,32 @@ class PCWStatsCommands(commands.Cog):
 
     @app_commands.command(
         name="pcwstats",
-        description="Get statistics about PCWStats website traffic",
+        description="Get real-time statistics about PCWStats website traffic",
     )
     @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     async def pcwstats(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer()
-
-        # Refresh cache if empty or stale (older than 1 hour)
-        if (
-            self.cache["last_updated"] is None
-            or (datetime.utcnow() - self.cache["last_updated"]).total_seconds() > 3600
-        ):
-            await self.refresh_cache()
+        await interaction.response.defer(thinking=True)
 
         # Initialize embed with clickable title to PCWStats
         embed = discord.Embed(
             title="📊 PCWStats Website Statistics", color=0x7289DA, url=self.pcwstats_url
         )
 
-        # Check if cache is loaded
-        if not self.cache["stats"] or not self.cache["pixel_config"]:
-            embed.description = (
-                "⚠️ PCWStats statistics not loaded. Please try again later."
-            )
+        success = await self.refresh_cache()
+
+        if not success:
+            embed.description = "⚠️ Failed to fetch fresh data from PCWStats API. Please try again later."
             await interaction.followup.send(embed=embed)
             return
 
         try:
-            stats = self.calculate_stats(self.cache["stats"])
-
-            if not stats:
-                embed.description = "⚠️ Error calculating statistics."
+            if not self.cache["stats"] or not self.cache["pixel_config"]:
+                embed.description = "⚠️ Received incomplete data from PCWStats API."
                 await interaction.followup.send(embed=embed)
                 return
+
+            stats = self.calculate_stats(self.cache["stats"])
 
             # Add main statistics
             embed.add_field(
@@ -172,16 +164,18 @@ class PCWStatsCommands(commands.Cog):
             # Set footer with cache info
             if self.cache["last_updated"]:
                 embed.set_footer(
-                    text=f"PCWStats Database • Last updated: {self.cache['last_updated'].strftime('%Y-%m-%d %H:%M UTC')}"
+                    text=f"Data fetched at: {self.cache['last_updated'].strftime('%Y-%m-%d %H:%M:%S UTC')}"
                 )
             else:
-                embed.set_footer(text="PCWStats Database • Cache not loaded")
+                embed.set_footer(text="Data freshness unknown")
 
             await interaction.followup.send(embed=embed)
 
         except Exception as e:
-            logging.error(f"Error parsing PCWStats: {e}")
-            embed.description = "⚠️ Error parsing PCWStats statistics."
+            logging.error(f"Error processing PCWStats data: {e}")
+            embed.description = (
+                "⚠️ Error processing PCWStats data. Please try again later."
+            )
             await interaction.followup.send(embed=embed)
 
     def cog_unload(self) -> None:
